@@ -20,6 +20,19 @@ local function onInterrupt()
     end
 end
 
+local realPrint = print
+local realcolorPrint = colorPrint
+
+local function applySteath()
+    if cfg and cfg.stealth then
+        _G.print = function(...) end
+        _G.colorPrint = function(...) end
+    else
+        _G.print = realPrint
+        _G.colorPrint = realcolorPrint
+    end
+end
+
 
 function startMaintainer()    
     cycles = 0

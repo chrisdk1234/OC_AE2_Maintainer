@@ -8,6 +8,7 @@
 return {
   sleepInterval = 40,
   shuffle = true,
+  stealth = false, -- silences a lot of print statements when true
   requestTimeoutCycles = 3,  -- Maximum cycles before timing out a craft
   resolution = {
     maxWidth = 120,   -- Maximum terminal width

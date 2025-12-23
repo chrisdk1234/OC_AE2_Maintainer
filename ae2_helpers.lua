@@ -32,6 +32,7 @@ cfg = {
     requestTimeoutCycles = config.requestTimeoutCycles or 3,
     resolution = config.resolution or { maxWidth = 120, maxHeight = 35 },
     items = config.items or {}
+    stealth = confing.stealth or false
 }
 
 
