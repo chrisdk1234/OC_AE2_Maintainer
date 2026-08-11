@@ -85,11 +85,23 @@ local function trackerComputing(tracker)
     return ok and computing == true
 end
 
+-- hasFailed() cannot be taken at face value. OC's CraftingStatus.save() does
+--     failed = link.fold(true)(!_.isDone)
+-- so every world save / persist flags a job that is merely still running as
+-- failed, leaving reason at its initial "no link". A real failure always goes
+-- through fail(), which formats reason as "request failed (...)", so that
+-- prefix - not the flag - is what identifies one.
 local function trackerFailed(tracker)
     if not tracker.hasFailed then return false end
+
     local ok, failed, reason = pcall(tracker.hasFailed)
-    if not ok then return false end
-    return failed == true, reason
+    if not ok or failed ~= true then return false end
+
+    if not tostring(reason):lower():find("request failed") then
+        return false
+    end
+
+    return true, reason
 end
 
 -- "COMPUTING" | "FAILED" | "CANCELED" | "COMPLETED" | "IN_PROGRESS"
