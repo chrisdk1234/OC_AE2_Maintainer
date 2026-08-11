@@ -24,7 +24,7 @@ config options:
 - sleepInterval : seconds to wait between cycles
 - shuffle : randomize craft order
 - requestTimeoutCycles : cycles before an unfinished craft gets cancelled
-- maxConcurrentCrafts : never run more than this many crafting jobs at once (default 8, set 0 for unlimited). Items that do not fit are deferred to the next cycle. The number of AE2 crafting CPUs is printed for information but never blocks a request - AE2 is asked, and the cycle stops at the first request it refuses
+- maxConcurrentCrafts : never run more than this many crafting jobs at once (default 8, set 0 for unlimited). Items that do not fit are deferred to the next cycle. The number of AE2 crafting CPUs is printed for information but never blocks a request - AE2 is asked, and the cycle stops after three refused requests
 - craftRequestTimeout : seconds to wait for AE2 to finish planning a job before moving on (default 5). AE2 plans asynchronously, so this is what lets a failure be reported against the item that caused it
 - compactStatus : true (default) prints one line per cycle, e.g. `✅ OK 55/62   ❌ BELOW 5/62   🔄 INFINITE 2`, instead of one line per maintained item. Set false for the full per-item table
 - skipKey : press this key during the sleep phase to skip the remaining wait and start the next cycle immediately (default "r"). Single characters ("r", "n") or key names from OpenComputers keyboard.keys ("space", "enter") both work
@@ -44,7 +44,7 @@ That AE2 message does not only mean missing items. AE2 returns it whenever it ca
 
 Run `diagnose` to see which of the three it is.
 
-Since AE2 uses the same message for all three, the maintainer treats the first such failure like running out of craft slots: it prints the error once and defers the remaining items to the next cycle instead of repeating it for every item. Keep `shuffle = true` so a single item with a genuinely missing ingredient cannot block the rest of the list every cycle.
+Since AE2 uses the same message for all three, a single refusal proves nothing and the cycle carries on. After three refused requests it stops and defers the remaining items to the next cycle, so the error can never repeat once per item. The limit is `REFUSAL_ABORT_LIMIT` at the top of `autoCraftNeededItems` in ae2_helpers.lua. Keep `shuffle = true` so a single item with a genuinely missing ingredient cannot block the same part of the list every cycle.
 
 IMPORTANT:
 

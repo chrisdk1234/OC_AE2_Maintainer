@@ -127,26 +127,6 @@ function isCraftRefusal(reason)
     return text:find("missing resources") ~= nil or text:find("no controller") ~= nil
 end
 
--- AE2 gives one generic reason whenever submitJob() hands back no crafting
--- link. What it means can only be narrowed down with evidence from the running
--- cycle: pass how many jobs AE2 has already accepted. Once it has accepted one,
--- the CPUs demonstrably do serve machine requests, so a refusal after that is
--- about this item, not about the CPUs.
-function describeCraftFailure(reason, acceptedThisCycle)
-    local text = tostring(reason or "unknown")
-    if not text:lower():find("missing resources") then
-        return text
-    end
-
-    if acceptedThisCycle and acceptedThisCycle > 0 then
-        return text .. string.format(
-            "\n     ↳ AE2 took %d job(s) this cycle, so CPUs do accept machine requests → this item is missing an ingredient, or the CPUs just filled up",
-            acceptedThisCycle)
-    end
-
-    return text .. "\n     ↳ nothing accepted yet this cycle: no idle CPU with enough bytes, CPU set to player-only crafting, or an ingredient is missing - run diagnose"
-end
-
 -- Only ever true for a real boolean true. Depending on the OC build, the busy
 -- flag from getCpus() has been seen as something other than a Lua boolean, and
 -- a truthy non-boolean must not make an idle CPU look busy.
@@ -504,28 +484,24 @@ function autoCraftNeededItems(currentCycle)
                 table.insert(craftIds, craftId)
                 budget = budget - 1
             else
-                colorPrint(colors.red, string.format("  ❌ FAILED → %s", describeCraftFailure(errorMsg, #craftIds)))
+                colorPrint(colors.red, string.format("  ❌ FAILED → %s", tostring(errorMsg)))
                 failedCount = failedCount + 1
 
                 -- "no CPU would take this job" and "this item is missing an
                 -- ingredient" arrive as the same message, so a single refusal
-                -- proves nothing. Keep going, and stop once the refusals
-                -- themselves say the network is not taking work: two in a row
-                -- with nothing accepted, or REFUSAL_ABORT_LIMIT in total. That
-                -- bounds the error spam without letting one unbuildable item
-                -- starve the rest of the list.
+                -- proves nothing and the run continues. After
+                -- REFUSAL_ABORT_LIMIT refusals the network is clearly not
+                -- taking work: defer the rest. Bounds the error output without
+                -- letting one unbuildable item starve the whole list.
                 if isCraftRefusal(errorMsg) then
                     refusals = refusals + 1
 
-                    local nothingAccepted = #craftIds == 0 and refusals >= 2
-                    if nothingAccepted or refusals >= REFUSAL_ABORT_LIMIT then
+                    if refusals >= REFUSAL_ABORT_LIMIT then
                         deferredCount = #needsList - i
                         if deferredCount > 0 then
-                            local why = nothingAccepted
-                                and string.format("AE2 accepted nothing this cycle (%d refusals)", refusals)
-                                or string.format("%d refused requests this cycle", refusals)
                             colorPrint(colors.magenta, string.format(
-                                "⏸ %s → deferring %d item(s) to next cycle", why, deferredCount))
+                                "⏸ %d refused requests → deferring %d item(s) to next cycle",
+                                refusals, deferredCount))
                         end
                         break
                     end
@@ -600,7 +576,7 @@ function checkCraftStatus(craftId, currentCycle)
     elseif state == "CANCELED" then
         colorPrint(colors.red, "❌ " .. line .. " CANCELED")
     elseif state == "FAILED" then
-        colorPrint(colors.red, "💥 " .. line .. " FAILED: " .. describeCraftFailure(reason))
+        colorPrint(colors.red, "💥 " .. line .. " FAILED: " .. tostring(reason))
     elseif state == "COMPUTING" then
         colorPrint(colors.yellow, "🧮 " .. line .. " AE2 STILL PLANNING")
     else
@@ -642,7 +618,7 @@ function cleanupCompletedCrafts()
             -- A job can still fail after it was requested; drop it so it stops
             -- occupying a craft slot
             colorPrint(colors.red, string.format("💥 Craft #%d (%s) failed: %s",
-                craftId, craft.itemName, describeCraftFailure(reason)))
+                craftId, craft.itemName, tostring(reason)))
             activeCrafts[craftId] = nil
             failed = failed + 1
         elseif state == "COMPLETED" or state == "CANCELED" then

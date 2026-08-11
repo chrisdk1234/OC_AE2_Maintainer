@@ -124,7 +124,9 @@ local function testRequest(label, amount)
 
     local state, reason = trackerState(tracker)
     if state == "FAILED" then
-        colorPrint(colors.red, "   💥 " .. describeCraftFailure(reason))
+        colorPrint(colors.red, "   💥 " .. tostring(reason))
+        colorPrint(colors.cyan, "   Causes: no idle CPU with enough bytes for this batch, CPU set to")
+        colorPrint(colors.cyan, "   player-only crafting, or an ingredient really is missing.")
         colorPrint(colors.cyan, "   Same amount works in the ME terminal? → cause 1 or 2 above, not a missing ingredient.")
     elseif state == "COMPUTING" then
         colorPrint(colors.yellow, string.format("   🧮 still planning after %.0fs - job tree is big, raise craftRequestTimeout", waited))
