@@ -15,7 +15,7 @@
 
 - **Compact cycle status** — `compactStatus` (default true) replaces the per-item threshold table with one line: `✅ OK n/total   ❌ BELOW n/total` plus `🔄 INFINITE` / `⏭ SKIP` counts when non-zero. Items below threshold still appear individually in the craft-request section, so nothing is hidden. `false` restores the full table
 - **CPU-aware scheduling** — per cycle the program starts at most `min(maxConcurrentCrafts - active, idle AE2 CPUs)` jobs and prints the CPU picture (`🖥 AE2 crafting CPUs: n idle / m total`)
-- **Actionable craft failures** — `request failed (missing resources?)` is annotated with its three real causes (no idle/large-enough CPU, CPU set to player-only crafting, genuinely missing ingredient)
+- **Actionable craft failures** — `request failed (missing resources?)` is annotated with its three real causes (no idle/large-enough CPU, CPU set to player-only crafting, genuinely missing ingredient), and the cycle aborts at the first one instead of repeating it per item
 - **diagnose.lua** — CPU inventory (size, co-processors, busy), config labels that match zero or several craft patterns, and an optional single test request that prints AE2's verdict
 
 ## Fixed

@@ -44,6 +44,8 @@ That AE2 message does not only mean missing items. AE2 returns it whenever it ca
 
 Run `diagnose` to see which of the three it is.
 
+Since AE2 uses the same message for all three, the maintainer treats the first such failure like running out of craft slots: it prints the error once and defers the remaining items to the next cycle instead of repeating it for every item. Keep `shuffle = true` so a single item with a genuinely missing ingredient cannot block the rest of the list every cycle.
+
 IMPORTANT:
 
 THE PROGRAM NEEDS AN INTERFACE OR A MECONTROLLER CONNECTED TO AN OC ADAPTER BLOCK.

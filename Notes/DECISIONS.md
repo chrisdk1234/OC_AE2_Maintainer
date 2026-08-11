@@ -1,5 +1,19 @@
 # DECISIONS
 
+## 2026-08-11 — A rejected request aborts the cycle instead of repeating per item
+
+`isGlobalCraftFailure(reason)` matches `missing resources` and `no controller`. On such a failure
+`autoCraftNeededItems` prints the annotated error once and breaks, deferring the rest of the list — the same
+handling as running out of craft slots, because functionally it is the same situation: AE2 accepted no job.
+
+AE2 cannot distinguish the cases for us. `submitJob` returns null for "no CPU will take this job" (global) and for
+`job.isSimulation()` (item-specific), and both surface as the identical string, so a per-item retry loop cannot know
+whether continuing is worthwhile. Aborting is right in the common case and costs one cycle in the rare one.
+
+R: with `shuffle = false`, one item whose ingredients really are missing would abort at the same position every
+cycle and starve everything after it. `shuffle = true` (the default here) reshuffles the order each cycle, so the
+rest of the list still gets served. Revisit if AE2 ever exposes the simulation flag separately.
+
 ## 2026-08-11 — `compactStatus` defaults to on, and the summary prints in both modes
 
 The maintained-item list grows without bound, so a per-item table per cycle scrolls the terminal out of use.

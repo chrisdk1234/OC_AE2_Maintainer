@@ -108,6 +108,13 @@ function trackerState(tracker)
     return "IN_PROGRESS"
 end
 
+-- Failures that will hit every other item in this cycle as well: AE2 took no
+-- job at all, so there is nothing to gain from asking 50 more times
+function isGlobalCraftFailure(reason)
+    local text = tostring(reason):lower()
+    return text:find("missing resources") ~= nil or text:find("no controller") ~= nil
+end
+
 -- AE2 reports one generic reason whenever submitJob() hands back no crafting
 -- link, so spell out what that actually means
 function describeCraftFailure(reason)
@@ -466,6 +473,20 @@ function autoCraftNeededItems(currentCycle)
             else
                 colorPrint(colors.red, string.format("  ❌ FAILED → %s", errorMsg))
                 failedCount = failedCount + 1
+
+                -- "no CPU would take this job" and "an ingredient is missing"
+                -- arrive as the same message. In the first case every remaining
+                -- item fails identically, so stop the cycle instead of printing
+                -- the same error for the whole list - same handling as running
+                -- out of craft slots.
+                if isGlobalCraftFailure(errorMsg) then
+                    deferredCount = #needsList - i
+                    if deferredCount > 0 then
+                        colorPrint(colors.magenta, string.format(
+                            "⏸ AE2 accepted no job → deferring %d item(s) to next cycle", deferredCount))
+                    end
+                    break
+                end
             end
         end
     end
