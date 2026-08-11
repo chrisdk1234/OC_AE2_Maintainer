@@ -24,7 +24,7 @@ config options:
 - sleepInterval : seconds to wait between cycles
 - shuffle : randomize craft order
 - requestTimeoutCycles : cycles before an unfinished craft gets cancelled
-- maxConcurrentCrafts : never run more than this many crafting jobs at once (default 8, set 0 for unlimited). The program additionally never requests more jobs than there are idle AE2 crafting CPUs, since every job needs one. Items that do not fit are deferred to the next cycle
+- maxConcurrentCrafts : never run more than this many crafting jobs at once (default 8, set 0 for unlimited). Items that do not fit are deferred to the next cycle. The number of AE2 crafting CPUs is printed for information but never blocks a request - AE2 is asked, and the cycle stops at the first request it refuses
 - craftRequestTimeout : seconds to wait for AE2 to finish planning a job before moving on (default 5). AE2 plans asynchronously, so this is what lets a failure be reported against the item that caused it
 - compactStatus : true (default) prints one line per cycle, e.g. `✅ OK 55/62   ❌ BELOW 5/62   🔄 INFINITE 2`, instead of one line per maintained item. Set false for the full per-item table
 - skipKey : press this key during the sleep phase to skip the remaining wait and start the next cycle immediately (default "r"). Single characters ("r", "n") or key names from OpenComputers keyboard.keys ("space", "enter") both work

@@ -125,7 +125,17 @@ function describeCraftFailure(reason)
     return text
 end
 
--- { total, free, maxFreeStorage, list } or nil when the ME proxy is too old
+-- Only ever true for a real boolean true. Depending on the OC build, the busy
+-- flag from getCpus() has been seen as something other than a Lua boolean, and
+-- a truthy non-boolean must not make an idle CPU look busy.
+function isCpuBusy(cpu)
+    return cpu.busy == true
+end
+
+-- { total, free, maxFreeStorage, list } or nil when the ME proxy is too old.
+-- INFORMATIONAL ONLY: never gate craft requests on this. AE2 decides whether a
+-- job can be placed, and it answers that when we ask it - see
+-- isGlobalCraftFailure().
 function getCraftingCpuInfo()
     if not ME.getCpus then return nil end
 
@@ -135,7 +145,7 @@ function getCraftingCpuInfo()
     local info = { total = 0, free = 0, maxFreeStorage = 0, list = cpus }
     for _, cpu in pairs(cpus) do
         info.total = info.total + 1
-        if not cpu.busy then
+        if not isCpuBusy(cpu) then
             info.free = info.free + 1
             local storage = tonumber(cpu.storage) or 0
             if storage > info.maxFreeStorage then
@@ -422,16 +432,17 @@ function autoCraftNeededItems(currentCycle)
     local activeCount = countActiveCrafts()
     local cpuInfo = getCraftingCpuInfo()
 
-    -- Budget of NEW jobs for this cycle. Every AE2 job occupies a crafting CPU,
-    -- so requesting more than there are idle CPUs just produces
-    -- "request failed (missing resources?)" for each surplus request.
+    -- Budget of NEW jobs for this cycle, from the config limit alone. The CPU
+    -- readout below is printed for information but must NOT cap this: whether
+    -- AE2 will place a job is AE2's answer to give, and a wrong busy flag here
+    -- would otherwise stop all crafting. Surplus requests are not spammed
+    -- either - the first refusal ends the cycle (isGlobalCraftFailure).
     local budget = math.huge
     if maxConcurrent > 0 then
         budget = math.max(0, maxConcurrent - activeCount)
         colorPrint(colors.cyan, string.format("🎚 Craft slots: %d/%d in use", activeCount, maxConcurrent))
     end
     if cpuInfo and cpuInfo.total > 0 then
-        budget = math.min(budget, cpuInfo.free)
         colorPrint(colors.cyan, string.format("🖥 AE2 crafting CPUs: %d idle / %d total (largest idle: %d bytes)",
             cpuInfo.free, cpuInfo.total, cpuInfo.maxFreeStorage))
     end
@@ -448,14 +459,10 @@ function autoCraftNeededItems(currentCycle)
         local alreadyCrafting, craftId = isItemCurrentlyBeingCrafted(item.label)
 
         if not alreadyCrafting and budget <= 0 then
-            local blocker = "concurrency limit reached"
-            if cpuInfo and cpuInfo.total > 0 and cpuInfo.free - #craftIds <= 0 then
-                blocker = string.format("no idle AE2 crafting CPU (%d total)", cpuInfo.total)
-            end
-
             deferredCount = #needsList - i + 1
             colorPrint(colors.magenta, string.format(
-                "⏸ %s → deferring %d item(s) to next cycle", blocker, deferredCount))
+                "⏸ craft slot limit (%d/%d tracked jobs) → deferring %d item(s) to next cycle",
+                activeCount + #craftIds, maxConcurrent, deferredCount))
             break
         end
 
@@ -483,7 +490,7 @@ function autoCraftNeededItems(currentCycle)
                     deferredCount = #needsList - i
                     if deferredCount > 0 then
                         colorPrint(colors.magenta, string.format(
-                            "⏸ AE2 accepted no job → deferring %d item(s) to next cycle", deferredCount))
+                            "⏸ AE2 refused this request → deferring %d item(s) to next cycle", deferredCount))
                     end
                     break
                 end
