@@ -108,21 +108,31 @@ function trackerState(tracker)
     return "IN_PROGRESS"
 end
 
--- Failures that will hit every other item in this cycle as well: AE2 took no
--- job at all, so there is nothing to gain from asking 50 more times
-function isGlobalCraftFailure(reason)
+-- AE2 refused to place the job. Same message whether no CPU would take it or
+-- the ingredients are missing, so this says nothing about which of the two.
+function isCraftRefusal(reason)
     local text = tostring(reason):lower()
     return text:find("missing resources") ~= nil or text:find("no controller") ~= nil
 end
 
--- AE2 reports one generic reason whenever submitJob() hands back no crafting
--- link, so spell out what that actually means
-function describeCraftFailure(reason)
+-- AE2 gives one generic reason whenever submitJob() hands back no crafting
+-- link. What it means can only be narrowed down with evidence from the running
+-- cycle: pass how many jobs AE2 has already accepted. Once it has accepted one,
+-- the CPUs demonstrably do serve machine requests, so a refusal after that is
+-- about this item, not about the CPUs.
+function describeCraftFailure(reason, acceptedThisCycle)
     local text = tostring(reason or "unknown")
-    if text:lower():find("missing resources") then
-        text = text .. "\n     ↳ no idle CPU with enough bytes for this batch, CPU restricted to player-only crafting, or an ingredient really is missing"
+    if not text:lower():find("missing resources") then
+        return text
     end
-    return text
+
+    if acceptedThisCycle and acceptedThisCycle > 0 then
+        return text .. string.format(
+            "\n     ↳ AE2 took %d job(s) this cycle, so CPUs do accept machine requests → this item is missing an ingredient, or the CPUs just filled up",
+            acceptedThisCycle)
+    end
+
+    return text .. "\n     ↳ nothing accepted yet this cycle: no idle CPU with enough bytes, CPU set to player-only crafting, or an ingredient is missing - run diagnose"
 end
 
 -- Only ever true for a real boolean true. Depending on the OC build, the busy
@@ -134,8 +144,7 @@ end
 
 -- { total, free, maxFreeStorage, list } or nil when the ME proxy is too old.
 -- INFORMATIONAL ONLY: never gate craft requests on this. AE2 decides whether a
--- job can be placed, and it answers that when we ask it - see
--- isGlobalCraftFailure().
+-- job can be placed, and it answers that when we ask it - see isCraftRefusal().
 function getCraftingCpuInfo()
     if not ME.getCpus then return nil end
 
@@ -380,9 +389,10 @@ function startCraft(itemName, amount, currentCycle)
         waited = waited + 0.25
     end
 
+    -- Raw reason: only the caller knows the cycle context needed to explain it
     local failed, reason = trackerFailed(requestTracker)
     if failed then
-        return nil, describeCraftFailure(reason)
+        return nil, tostring(reason)
     end
 
     local craftId = 1
@@ -411,6 +421,9 @@ function isItemCurrentlyBeingCrafted(itemName)
     return false
 end
 
+-- Refused requests tolerated in one cycle before the rest is deferred
+local REFUSAL_ABORT_LIMIT = 3
+
 function autoCraftNeededItems(currentCycle)
     local needsList = checkAllThresholds()
     
@@ -426,6 +439,7 @@ function autoCraftNeededItems(currentCycle)
     local skippedCount = 0
     local failedCount = 0
     local deferredCount = 0
+    local refusals = 0
 
     -- 0 = unlimited concurrent crafts
     local maxConcurrent = cfg.maxConcurrentCrafts or 8
@@ -436,7 +450,7 @@ function autoCraftNeededItems(currentCycle)
     -- readout below is printed for information but must NOT cap this: whether
     -- AE2 will place a job is AE2's answer to give, and a wrong busy flag here
     -- would otherwise stop all crafting. Surplus requests are not spammed
-    -- either - the first refusal ends the cycle (isGlobalCraftFailure).
+    -- either - refusals are bounded per cycle, see REFUSAL_ABORT_LIMIT.
     local budget = math.huge
     if maxConcurrent > 0 then
         budget = math.max(0, maxConcurrent - activeCount)
@@ -478,27 +492,37 @@ function autoCraftNeededItems(currentCycle)
                 table.insert(craftIds, craftId)
                 budget = budget - 1
             else
-                colorPrint(colors.red, string.format("  ❌ FAILED → %s", errorMsg))
+                colorPrint(colors.red, string.format("  ❌ FAILED → %s", describeCraftFailure(errorMsg, #craftIds)))
                 failedCount = failedCount + 1
 
-                -- "no CPU would take this job" and "an ingredient is missing"
-                -- arrive as the same message. In the first case every remaining
-                -- item fails identically, so stop the cycle instead of printing
-                -- the same error for the whole list - same handling as running
-                -- out of craft slots.
-                if isGlobalCraftFailure(errorMsg) then
-                    deferredCount = #needsList - i
-                    if deferredCount > 0 then
-                        colorPrint(colors.magenta, string.format(
-                            "⏸ AE2 refused this request → deferring %d item(s) to next cycle", deferredCount))
+                -- "no CPU would take this job" and "this item is missing an
+                -- ingredient" arrive as the same message, so a single refusal
+                -- proves nothing. Keep going, and stop once the refusals
+                -- themselves say the network is not taking work: two in a row
+                -- with nothing accepted, or REFUSAL_ABORT_LIMIT in total. That
+                -- bounds the error spam without letting one unbuildable item
+                -- starve the rest of the list.
+                if isCraftRefusal(errorMsg) then
+                    refusals = refusals + 1
+
+                    local nothingAccepted = #craftIds == 0 and refusals >= 2
+                    if nothingAccepted or refusals >= REFUSAL_ABORT_LIMIT then
+                        deferredCount = #needsList - i
+                        if deferredCount > 0 then
+                            local why = nothingAccepted
+                                and string.format("AE2 accepted nothing this cycle (%d refusals)", refusals)
+                                or string.format("%d refused requests this cycle", refusals)
+                            colorPrint(colors.magenta, string.format(
+                                "⏸ %s → deferring %d item(s) to next cycle", why, deferredCount))
+                        end
+                        break
                     end
-                    break
                 end
             end
         end
     end
     
-    print(string.format("\n✅ SUMMARY: Started %d craft requests, skipped %d already in progress, %d deferred (limit), %d failed",
+    print(string.format("\n✅ SUMMARY: Started %d craft requests, skipped %d already in progress, %d deferred, %d failed",
         #craftIds, skippedCount, deferredCount, failedCount))
     return craftIds
 end
