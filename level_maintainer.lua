@@ -1,6 +1,8 @@
 local event = require("event")
 local term = require("term")
 local component = require("component")
+local computer = require("computer")
+local keyboard = require("keyboard")
 
 require("ae2_helpers")
 
@@ -18,6 +20,38 @@ local function onInterrupt()
         colorPrint(colors.yellow, "\n✋Interrupt signal received, stopping maintainer")
         running = false
     end
+end
+
+-- true when the pressed key matches cfg.skipKey (single char like "r", or a
+-- keyboard.keys name like "space")
+local function isSkipKey(char, code)
+    local want = tostring(cfg.skipKey or "r"):lower()
+
+    if char and char > 0 and char < 256 and string.char(char):lower() == want then
+        return true
+    end
+
+    return keyboard.keys[want] ~= nil and code == keyboard.keys[want]
+end
+
+-- Sleeps up to sleepTime seconds; returns true if the wait was skipped by key
+local function sleepUntilNextCycle(sleepTime)
+    local deadline = computer.uptime() + sleepTime
+
+    while running do
+        local remaining = deadline - computer.uptime()
+        if remaining <= 0 then
+            return false
+        end
+
+        -- 1s slices keep the interrupt handler responsive
+        local name, _, char, code = event.pull(math.min(1, remaining), "key_down")
+        if name == "key_down" and isSkipKey(char, code) then
+            return true
+        end
+    end
+
+    return false
 end
 
 
@@ -40,11 +74,8 @@ function startMaintainer()
         cleanupTimedOutCrafts(cycles)
         
         -- Check current active crafts
-        local activeCraftCount = 0
-        for _ in pairs(activeCrafts) do
-            activeCraftCount = activeCraftCount + 1
-        end
-        
+        local activeCraftCount = countActiveCrafts()
+
         if activeCraftCount > 0 then
             print("📊 " .. activeCraftCount .. " active crafts in progress...")
             checkActiveCrafts(cycles)
@@ -54,16 +85,13 @@ function startMaintainer()
         autoCraftNeededItems(cycles)
         
         local sleepTime = cfg.sleepInterval
-        print(string.format("\n🛌 Sleeping for %d seconds... (Ctrl+C to stop)", sleepTime))
+        print(string.format("\n🛌 Sleeping for %d seconds... (press %s to skip, Ctrl+C to stop)",
+            sleepTime, tostring(cfg.skipKey):upper()))
 
-        local elapsed = 0
-        local SLEEP_CHUNK_SIZE = math.min(5.0, sleepTime / 8)  -- Sleep in ~8 chunks or 5s max
-        while running and elapsed < sleepTime do
-            local sleepChunk = math.min(SLEEP_CHUNK_SIZE, sleepTime - elapsed)
-            os.sleep(sleepChunk)
-            elapsed = elapsed + sleepChunk
+        if sleepUntilNextCycle(sleepTime) then
+            colorPrint(colors.magenta, "⏩ Wait skipped, starting next cycle")
         end
-        
+
         if not running then
             break
         end
@@ -77,11 +105,8 @@ function startMaintainer()
     print("📊 Completed " .. cycles .. " monitoring cycles")
     
     -- Check for active crafts and cancel them
-    local finalActiveCrafts = 0
-    for _ in pairs(activeCrafts) do
-        finalActiveCrafts = finalActiveCrafts + 1
-    end
-    
+    local finalActiveCrafts = countActiveCrafts()
+
     if finalActiveCrafts > 0 then
         checkActiveCrafts(cycles)
         
